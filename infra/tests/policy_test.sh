@@ -36,8 +36,8 @@ check("no key_name", not re.search(r'(?m)^\s*key_name\s*=', code))
 check("IMDSv2 required (LT + instance), never optional",
       len(re.findall(r'http_tokens\s*=\s*"required"', h)) >= 2 and not re.search(r'http_tokens\s*=\s*"optional"', code))
 check("IMDS hop limit 1 (LT + instance)", len(re.findall(r'http_put_response_hop_limit\s*=\s*1\b', h)) >= 2)
-check("EBS encrypted (LT + root_block_device), never false",
-      len(re.findall(r'encrypted\s*=\s*true', h)) >= 2 and not re.search(r'encrypted\s*=\s*false', code))
+check("EBS encrypted in launch template, never false",
+      len(re.findall(r'encrypted\s*=\s*true', h)) == 1 and not re.search(r'encrypted\s*=\s*false', code))
 check("S3 public access block has all four flags set true",
       all(re.search(k + r'\s*=\s*true', s) for k in
           ("block_public_acls", "block_public_policy", "ignore_public_acls", "restrict_public_buckets")))

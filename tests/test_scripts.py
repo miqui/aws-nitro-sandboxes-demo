@@ -48,6 +48,45 @@ class BootstrapTests(unittest.TestCase):
             with self.subTest(a=a, b=b):
                 self.assertEqual(self.helper("version_ge %s %s" % (a, b)).returncode, rc)
 
+    def test_memory_pool_requires_boot_parameter_and_nonzero_total(self):
+        for total, cmdline, expected in (
+            ('0', 'nitro_enclaves.mempool=4G', 1),
+            ('4096', '', 1),
+            ('invalid', 'nitro_enclaves.mempool=4G', 1),
+            ('4294967296', 'nitro_enclaves.mempool=4G', 0),
+        ):
+            with self.subTest(total=total, cmdline=cmdline):
+                expr = ("cat() { echo '%s'; }; "
+                        "grep() { [[ '%s' == nitro_enclaves.mempool=4G ]]; }; "
+                        "check_memory_pool") % (total, cmdline)
+                result = self.helper(expr)
+                self.assertEqual(result.returncode, expected, result.stderr)
+                if expected:
+                    self.assertIn('sudo reboot', result.stderr)
+                    self.assertIn('grubby', result.stderr)
+
+    def test_rootfs_rejection_does_not_write_stamp(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = os.path.join(directory, 'state')
+            artifacts = os.path.join(directory, 'artifacts')
+            os.makedirs(os.path.join(state, 'images'))
+            os.makedirs(artifacts)
+            with open(os.path.join(artifacts, 'MANIFEST'), 'w') as fh:
+                fh.write('ROOTFS_SQUASHFS=rootfs.squashfs\n')
+            with open(os.path.join(artifacts, 'rootfs.squashfs'), 'wb') as fh:
+                fh.write(b'fixture')
+            env = dict(os.environ, SANDBOX_DEMO_ROOT=REPO_ROOT,
+                       SANDBOX_DEMO_STATE=state, SANDBOX_DEMO_ARTIFACTS=artifacts)
+            # Extraction fixture deliberately has no interpreter (or guest shell).
+            result = sh('bash', '-c',
+                        'BOOTSTRAP_SOURCE_ONLY=1 source "$1"; '
+                        'unsquashfs() { mkdir -p "$3"; }; build_rootfs',
+                        'test', BOOTSTRAP, env=env)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('no usable Python 3 interpreter', result.stderr)
+            self.assertFalse(os.path.exists(os.path.join(state, 'images', 'rootfs.stamp')))
+            self.assertFalse(os.path.exists(os.path.join(state, 'images', 'rootfs.ext4')))
+
     def test_help(self):
         p = sh("bash", BOOTSTRAP, "--help")
         self.assertEqual(p.returncode, 0)

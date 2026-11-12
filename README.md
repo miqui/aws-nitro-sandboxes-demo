@@ -1,3 +1,7 @@
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:3eb32669fdf409c8408922756eb1ef8e74637522bbe751daf1211591d23c574f -->
+
 # aws-nitro-sandboxes-demo
 
 Run untrusted Python inside an **AWS Nitro Sandbox** (a Firecracker microVM backed by Nitro hardware isolation) on a
@@ -75,15 +79,15 @@ tests, and dry-runs of the launcher and the bundle scripts.
 | `ami_ssm_parameter_x86_64` | AL2023 kernel-6.18 parameter | resolved at launch |
 | `vpc_cidr` | `10.20.0.0/16` | |
 | `root_volume_size_gb` | `30` | |
-| `bundle_key` | `sandbox-demo.tgz` | |
 | `enable_logs_endpoint` | `false` | extra hourly cost |
 | `enable_phase2_kms` | `false` | KMS key + endpoint; needs `kms_allowed_image_pcr0` |
 | `kms_allowed_image_pcr0` | `""` | 96 hex chars when phase 2 is on |
 
 ## Cost
 
-One `m6i.2xlarge` on-demand, 30 GiB gp3, and **3 AZs x 3 interface endpoints (9 ENIs billed hourly)**, which often
-costs more than the idle host. The S3 gateway endpoint is free. No NAT gateway. Destroy when done.
+Regional estimate for us-east-1: **3 AZs x 3 interface endpoints (9 ENIs billed hourly)** cost about $0.09/hour,
+versus about $0.384/hour for the default Linux `m6i.2xlarge` on-demand host. The host costs more while running;
+30 GiB gp3 storage and data processing are additional costs. The S3 gateway endpoint is free. No NAT gateway. Destroy when done.
 
 ## Security posture
 
@@ -107,10 +111,13 @@ Prerequisites: AWS credentials for a sandbox account, `tofu` >= 1.8, AWS CLI + S
 4. Create only the bucket first: `tofu apply -target=aws_s3_bucket.artifacts`
 5. Upload: `cd .. && scripts/upload-bundle.sh --bucket "$(cd infra && tofu output -raw artifacts_bucket)"`
 6. Full apply: `cd infra && tofu apply` (review the plan first).
-7. Connect: `eval "$(tofu output -raw ssm_start_session_command)"`. Bootstrap log: `/var/log/sandbox-demo-userdata.log`.
+7. Connect: `eval "$(tofu output -raw ssm_start_session_command)"`. Wait for `sudo test -f /var/lib/sandbox-demo/.bootstrap-done` to succeed before running samples.
+   If the marker does not appear or bootstrap fails, inspect `sudo cat /var/log/sandbox-demo-userdata.log`.
+   If preflight reports no memory pool, follow its kernel-parameter and reboot steps, reconnect,
+   and rerun `sudo /opt/sandbox-demo/host/bootstrap.sh`; wait for the marker again.
 8. Run a sample on the host: `sudo /opt/sandbox-demo/app/bin/run-sandbox /opt/sandbox-demo/app/samples/hello.py`
    (also `isolation_probe.py`, `memory_hog.py`, `infinite_loop.py --timeout-s 5` -> exit 124).
-9. Tear down: `tofu destroy`.
+9. Tear down: `exit` the SSM session, return to the local repository’s `infra/` directory, and run `tofu destroy` there.
 
 If the host booted before the upload, user-data failed: upload, then `sudo cloud-init clean --logs && sudo reboot`.
 
@@ -119,7 +126,7 @@ If the host booted before the upload, user-data failed: upload, then `sudo cloud
 Only commands actually executed while preparing this repo (macOS, OpenTofu v1.13.9, Python 3).
 
 ```
-$ cd infra && tofu fmt -check -recursive && tofu init -backend=false -input=false && tofu validate
+$ (cd infra && tofu fmt -check -recursive && tofu init -backend=false -input=false && tofu validate)
 Success! The configuration is valid.
 
 $ python3 -m unittest discover
@@ -179,10 +186,13 @@ firecracker --api-sock /var/lib/sandbox-demo/runs/93966ddf110b/api.sock --config
 - Remote encrypted state with locking; pinned AMI ID; real `tofu plan` review in CI.
 - Bucket: SSE-KMS with CMK, `force_destroy = false`, access logging, replication, endpoint policies, VPC flow logs, CloudTrail data events.
 - More than one host (single instance is a SPOF); Session Manager session logging.
-- Use the `jailer`, and a cross-run vCPU budget (the 5x limit is per run only).
+- Use the `jailer`, and a cross-run vCPU budget (combined overcommitted sandboxes must stay within 5x parent vCPUs).
 - Phase 2: pin PCR0 per release, alarm on KMS `Decrypt` denials, never use debug mode.
 - Prove, rather than assume, memory confidentiality before relying on it.
 
 ## License
 
 See `LICENSE`.
+
+
+<!-- /coderabbit-ai-generated:v1 -->

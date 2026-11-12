@@ -47,13 +47,14 @@ class ConfigTests(unittest.TestCase):
             with self.subTest(spec=spec), self.assertRaises(ConfigError):
                 validate_spec(spec, 8)
 
-    def test_vcpu_cap_is_5x_parent(self):
-        validate_spec(SandboxSpec(vcpus=10), 2)  # exactly 5x
+    def test_vcpu_cap_is_parent(self):
+        for overcommit in (False, True):
+            validate_spec(SandboxSpec(vcpus=2, cpu_overcommit=overcommit), 2)
+            with self.assertRaises(ConfigError):
+                validate_spec(SandboxSpec(vcpus=4, cpu_overcommit=overcommit), 2)
+        validate_spec(SandboxSpec(vcpus=3, cpu_overcommit=True), 3)
         with self.assertRaises(ConfigError):
-            validate_spec(SandboxSpec(vcpus=12), 2)
-        validate_spec(SandboxSpec(vcpus=11, cpu_overcommit=True), 3)
-        with self.assertRaises(ConfigError):
-            validate_spec(SandboxSpec(vcpus=16, cpu_overcommit=True), 3)
+            validate_spec(SandboxSpec(vcpus=4, cpu_overcommit=True), 3)
 
     def test_odd_vcpus_ok_with_overcommit(self):
         validate_spec(SandboxSpec(vcpus=3, cpu_overcommit=True), 8)

@@ -9,8 +9,8 @@ locals {
     exec > >(tee /var/log/sandbox-demo-userdata.log) 2>&1
     TOKEN=$(curl -sS -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')
     export AWS_DEFAULT_REGION=$(curl -sS -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/placement/region)
-    aws s3 cp s3://${aws_s3_bucket.artifacts.id}/${var.bundle_key} /tmp/sandbox-demo.tgz
-    if aws s3 cp s3://${aws_s3_bucket.artifacts.id}/${var.bundle_key}.sha256 /tmp/sandbox-demo.tgz.sha256 2>/dev/null; then
+    aws s3 cp s3://${aws_s3_bucket.artifacts.id}/sandbox-demo.tgz /tmp/sandbox-demo.tgz
+    if aws s3 cp s3://${aws_s3_bucket.artifacts.id}/sandbox-demo.tgz.sha256 /tmp/sandbox-demo.tgz.sha256 2>/dev/null; then
       (cd /tmp && echo "$(cut -d' ' -f1 sandbox-demo.tgz.sha256)  sandbox-demo.tgz" | sha256sum -c -)
     else
       echo "WARNING: no .sha256 object found; bundle integrity not verified"
@@ -98,12 +98,6 @@ resource "aws_instance" "host" {
     http_put_response_hop_limit = 1
   }
 
-  root_block_device {
-    encrypted   = true
-    volume_type = "gp3"
-    volume_size = var.root_volume_size_gb
-  }
-
   monitoring    = true
   ebs_optimized = true
 
@@ -111,6 +105,10 @@ resource "aws_instance" "host" {
 
   # The host needs the S3 gateway route and SSM endpoints before it boots.
   depends_on = [
+    aws_vpc_security_group_egress_rule.host_to_s3,
+    aws_vpc_security_group_egress_rule.host_to_endpoints,
+    aws_vpc_security_group_ingress_rule.endpoints_from_host,
+    aws_route_table_association.private[0],
     aws_vpc_endpoint.s3,
     aws_vpc_endpoint.interface,
     aws_iam_role_policy.artifacts_read,

@@ -57,8 +57,8 @@ variable "vpc_cidr" {
   default     = "10.20.0.0/16"
 
   validation {
-    condition     = can(cidrhost(var.vpc_cidr, 0)) && tonumber(split("/", var.vpc_cidr)[1]) <= 16
-    error_message = "vpc_cidr must be a valid CIDR with prefix length <= /16."
+    condition     = can(cidrhost(var.vpc_cidr, 0)) && can(cidrnetmask(var.vpc_cidr)) && can(regex("/16$", var.vpc_cidr))
+    error_message = "vpc_cidr must be a valid IPv4 CIDR with prefix length /16."
   }
 }
 
@@ -68,15 +68,9 @@ variable "root_volume_size_gb" {
   default     = 30
 
   validation {
-    condition     = var.root_volume_size_gb >= 30 && var.root_volume_size_gb <= 500
-    error_message = "root_volume_size_gb must be between 30 and 500."
+    condition     = var.root_volume_size_gb >= 30 && var.root_volume_size_gb <= 500 && floor(var.root_volume_size_gb) == var.root_volume_size_gb
+    error_message = "root_volume_size_gb must be a whole number between 30 and 500 GiB."
   }
-}
-
-variable "bundle_key" {
-  description = "S3 object key of the app/host bundle uploaded by scripts (not by tofu)."
-  type        = string
-  default     = "sandbox-demo.tgz"
 }
 
 variable "enable_logs_endpoint" {

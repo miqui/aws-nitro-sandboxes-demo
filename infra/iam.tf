@@ -51,8 +51,8 @@ data "aws_iam_policy_document" "artifacts_read" {
     sid     = "ReadBundle"
     actions = ["s3:GetObject"]
     resources = [
-      "${aws_s3_bucket.artifacts.arn}/${var.bundle_key}",
-      "${aws_s3_bucket.artifacts.arn}/${var.bundle_key}.sha256",
+      "${aws_s3_bucket.artifacts.arn}/sandbox-demo.tgz",
+      "${aws_s3_bucket.artifacts.arn}/sandbox-demo.tgz.sha256",
     ]
   }
 }

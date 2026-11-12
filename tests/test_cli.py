@@ -42,9 +42,9 @@ class CliTests(unittest.TestCase):
         self.assertEqual(conf["machine-config"]["vcpu_count"], 2)
 
     def test_invalid_request_exit_2(self):
-        p = self.dry("--vcpus", "22")  # > 5 x 4
+        p = self.dry("--vcpus", "6")  # > parent vCPUs (4)
         self.assertEqual(p.returncode, 2)
-        self.assertIn("exceeds 5x parent", p.stderr)
+        self.assertIn("exceeds parent", p.stderr)
 
     def test_missing_file_exit_2(self):
         out, err = io.StringIO(), io.StringIO()

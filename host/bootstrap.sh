@@ -40,6 +40,16 @@ Env overrides: SANDBOX_DEMO_ROOT SANDBOX_DEMO_STATE SANDBOX_DEMO_ARTIFACTS SANDB
 EOF
 }
 
+check_memory_pool() {
+  local total
+  total="$(cat /sys/class/misc/nitro_enclaves/mem_pool/total 2>/dev/null)" || total=0
+  if ! [[ "$total" =~ ^[0-9]+$ ]] || [[ "$total" -eq 0 ]] \
+      || ! grep -Eq '(^| )nitro_enclaves.mempool=[^ ]+' /proc/cmdline; then
+    die "No verified boot-time Nitro Sandbox memory pool. On AL2023 run: sudo grubby --update-kernel=ALL --args='nitro_enclaves.mempool=4G'; sudo reboot. After reboot verify /proc/cmdline and /sys/class/misc/nitro_enclaves/mem_pool/total (>0), then rerun sudo $ROOT/host/bootstrap.sh. Size the pool for your workload and parent memory; allocator.yaml is not sufficient."
+  fi
+  log "boot-time sandbox memory pool: $total bytes"
+}
+
 preflight() {
   [[ "$(uname -s)" == "Linux" ]] || die "must run on Linux (the AL2023 parent instance); this is $(uname -s)"
   [[ "$(id -u)" -eq 0 ]] || die "must run as root"
@@ -62,12 +72,10 @@ preflight() {
   else
     warn "/dev/kvm absent (expected on non-metal EC2; sandboxes are believed to use /dev/nitro_enclaves instead - UNVERIFIED)"
   fi
-  if [[ ! -r /etc/nitro_enclaves/allocator.yaml ]]; then
-    warn "no /etc/nitro_enclaves/allocator.yaml: CPU/memory pool for sandboxes may need configuring (UNVERIFIED)"
-  fi
+  check_memory_pool
 
   local tool
-  for tool in tar sha256sum mkfs.ext4 unsquashfs install find; do
+  for tool in tar sha256sum mkfs.ext4 unsquashfs install find chroot; do
     command -v "$tool" >/dev/null 2>&1 \
       || die "required tool '$tool' not found (AL2023: dnf install e2fsprogs squashfs-tools; needs the AL2023 repo via the S3 VPC endpoint, UNVERIFIED)"
   done
@@ -115,7 +123,7 @@ build_rootfs() {
   local squash stamp want dst="$STATE_DIR/images/rootfs.ext4" tmp mib
   squash="$ART_DIR/$(manifest_get ROOTFS_SQUASHFS)"
   stamp="$STATE_DIR/images/rootfs.stamp"
-  want="$(cat "$squash" "$ROOT/app/guest/agent.py" "$ROOT/app/guest/init.sh" | sha256sum | cut -d' ' -f1)"
+  want="python-path-check-v1-$(cat "$squash" "$ROOT/app/guest/agent.py" "$ROOT/app/guest/init.sh" | sha256sum | cut -d' ' -f1)"
   if [[ -f "$dst" && -f "$stamp" && "$(cat "$stamp")" == "$want" ]]; then
     log "rootfs already built for these inputs"
     return
@@ -125,8 +133,12 @@ build_rootfs() {
   mkdir -p "$tmp/tree/opt/sandbox"
   install -m 0755 "$ROOT/app/guest/agent.py" "$tmp/tree/opt/sandbox/agent.py"
   install -m 0755 "$ROOT/app/guest/init.sh" "$tmp/tree/opt/sandbox/init.sh"
-  [[ -x "$tmp/tree/usr/bin/python3" ]] \
-    || warn "rootfs has no /usr/bin/python3: the guest agent will not start (UNVERIFIED that the CI rootfs ships python3)"
+  if ! chroot "$tmp/tree" /bin/sh -c '
+      export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      exec python3 -I -c "import sys; assert sys.version_info.major == 3"'; then
+    rm -rf "$tmp"
+    die "rootfs has no usable Python 3 interpreter on the guest PATH"
+  fi
   mib=$(( $(du -sm "$tmp/tree" | cut -f1) + ROOTFS_EXTRA_MIB ))
   rm -f "$dst.tmp"
   truncate -s "${mib}M" "$dst.tmp"
@@ -144,6 +156,7 @@ main() {
     "") ;;
     *) usage >&2; exit 2 ;;
   esac
+  rm -f "$STATE_DIR/.bootstrap-done"
   preflight
   verify_artifacts
   install -d -m 0755 "$STATE_DIR" "$STATE_DIR/images"

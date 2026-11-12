@@ -1,3 +1,7 @@
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:f199761905fde79104fa101e453cea80ad3c4c315023a3e5e364293d2ed72ccb -->
+
 # app/ and host/ — sandbox launcher, guest agent, bootstrap
 
 Runs untrusted Python inside a **Nitro Sandbox** (Firecracker >= 1.18 on an AL2023 `kernel6.18 >= 6.18.51-120.162`
@@ -36,11 +40,12 @@ sudo /opt/sandbox-demo/app/bin/run-sandbox FILE.py [--mode confidential|direct] 
 - Default `confidential` emits `"enclave": {}`; `direct` emits `{"direct_mode": true}`; `--debug` adds `debug_mode`
   (serial console, PCRs zeroed). `--cpu-overcommit` is **opt-in here** (the plan listed it default-on; off keeps the
   documented `{}` object and dedicated cores).
-- Validation: vcpus even unless overcommit, <= 1024, total <= 5x parent vCPUs; mem >= 64 MiB and even; timeout 1..3600 s.
+- Validation: vcpus even unless overcommit, <= 1024, each sandbox <= parent vCPUs; mem >= 64 MiB and even; timeout 1..3600 s.
 - Exit codes: the guest program's; 124 = timeout (sandbox killed); 125 = launcher/boot failure; 2 = bad request.
 - Per run: private copy of the rootfs, `firecracker --api-sock … --config-file …`, code sent over vsock (port 5005,
   Firecracker UDS `CONNECT` handshake), result returned as JSON. On exit/timeout firecracker gets SIGTERM then SIGKILL and the run dir is deleted.
-- One sandbox per invocation; the 5x vCPU budget is checked per run, **not** across concurrent runs. The `jailer` is not used yet.
+- One sandbox per invocation; combined vCPUs across overcommitted sandboxes may be up to 5x parent vCPUs;
+  this cross-run budget is not enforced by the launcher. The `jailer` is not used yet.
 
 ## Isolation demos (`app/samples/`)
 
@@ -62,9 +67,11 @@ it as a property; this repo neither proves nor tests it. Direct mode explicitly 
 
 ## Bootstrap (`host/bootstrap.sh`)
 
-Idempotent; checks root, kernel >= 6.18.51-120.162, `/dev/nitro_enclaves` (hard requirement; `/dev/kvm` informational), required tools;
+Idempotent; checks root, kernel >= 6.18.51-120.162, `/dev/nitro_enclaves` (hard requirement; `/dev/kvm` informational), required tools, and a nonzero boot-time memory pool (`nitro_enclaves.mempool`, verified through sysfs);
 verifies `SHA256SUMS`; installs Firecracker to `/usr/local/bin`; places kernel and builds `rootfs.ext4` (squashfs + guest agent + `/opt/sandbox/init.sh`
-via `mkfs.ext4 -d`) in `/var/lib/sandbox-demo/images`. `--check-only` runs preflight only.
+via `mkfs.ext4 -d`, after executing Python 3 through the guest PATH in a chroot) in `/var/lib/sandbox-demo/images`. `--check-only` runs preflight only. If the memory pool is missing, preflight fails with the
+`grubby` command and reboot/retry steps. Wait for `/var/lib/sandbox-demo/.bootstrap-done` before running samples;
+inspect `/var/log/sandbox-demo-userdata.log` if it does not appear.
 
 ## Phase 2 (`app/phase2/`) — UNVERIFIED skeleton
 
@@ -81,3 +88,6 @@ Blocked on a documented way to build a sandbox EIF with known PCR0.
 ## Tests
 
 `python3 -m unittest discover` (repo root); shell scripts also checked with `bash -n` and `shellcheck`.
+
+
+<!-- /coderabbit-ai-generated:v1 -->

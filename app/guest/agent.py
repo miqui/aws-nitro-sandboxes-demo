@@ -11,6 +11,8 @@ import argparse
 import base64
 import json
 import os
+import selectors
+import time
 import signal
 import socket
 import struct
@@ -52,6 +54,41 @@ def _clip(data):
     return text
 
 
+def _capture(proc, timeout_s):
+    """Drain both pipes, keeping one extra byte for _clip's truncation marker."""
+    buffers = [bytearray(), bytearray()]
+    deadline = time.monotonic() + timeout_s
+    timed_out = False
+    with selectors.DefaultSelector() as selector:
+        for stream, buf in zip((proc.stdout, proc.stderr), buffers):
+            selector.register(stream, selectors.EVENT_READ, buf)
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if not timed_out and remaining <= 0:
+                timed_out = True
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            for key, _ in selector.select(None if timed_out else max(0, remaining)):
+                chunk = os.read(key.fileobj.fileno(), 8192)
+                if not chunk:
+                    selector.unregister(key.fileobj)
+                    key.fileobj.close()
+                else:
+                    key.data.extend(chunk[:max(0, MAX_OUTPUT + 1 - len(key.data))])
+        try:
+            proc.wait(timeout=None if timed_out else max(0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            proc.wait()
+    return buffers[0], buffers[1], timed_out
+
+
 def run_code(code, timeout_s, extra_env=None, python=None):
     """Run `code` with `python -I`; kill the whole process group on timeout."""
     python = python or sys.executable
@@ -70,16 +107,7 @@ def run_code(code, timeout_s, extra_env=None, python=None):
             env=env,
             start_new_session=True,
         )
-        timed_out = False
-        try:
-            out, err = proc.communicate(timeout=timeout_s)
-        except subprocess.TimeoutExpired:
-            timed_out = True
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            out, err = proc.communicate()
+        out, err, timed_out = _capture(proc, timeout_s)
         code_rc = 124 if timed_out else proc.returncode
         return {"exit_code": code_rc, "stdout": _clip(out), "stderr": _clip(err), "timed_out": timed_out}
 

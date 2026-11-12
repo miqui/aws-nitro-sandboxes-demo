@@ -37,6 +37,28 @@ class AgentTests(unittest.TestCase):
         r = agent.run_code("print('a' * 200000)", 10)
         self.assertIn("truncated", r["stdout"])
 
+    def test_both_streams_drained_with_bounded_capture(self):
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "import os; "
+             "[(os.write(1, b'a' * 8192), os.write(2, b'b' * 8192)) for _ in range(256)]"],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True,
+        )
+        out, err, timed_out = agent._capture(proc, 10)
+        self.assertFalse(timed_out)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(len(out), agent.MAX_OUTPUT + 1)
+        self.assertEqual(len(err), agent.MAX_OUTPUT + 1)
+        self.assertEqual(agent._clip(out), 'a' * agent.MAX_OUTPUT +
+                         "\n[output truncated at %d bytes]" % agent.MAX_OUTPUT)
+
+    def test_timeout_with_descendant_holding_pipes(self):
+        r = agent.run_code(
+            "import subprocess, sys; subprocess.Popen([sys.executable, '-c', "
+            "'import time; time.sleep(30)']); print('started', flush=True)", 1)
+        self.assertEqual(r['exit_code'], 124)
+        self.assertTrue(r['timed_out'])
+        self.assertEqual(r['stdout'], 'started\n')
+
     def test_wire_compat_with_launcher_channel(self):
         a, b = socket.socketpair()
         t = threading.Thread(target=lambda: agent.handle(b))

@@ -1,3 +1,7 @@
+<!-- coderabbit-ai-generated:v1 -->
+
+<!-- coderabbit-ai-generated-section:v1:60fe4f9eea61e702acba90cc426205df772be1eb3ba41901321a95a4755de247 -->
+
 # infra/ — Nitro Sandboxes demo (OpenTofu)
 
 Private-only VPC + one Nitro-Enclaves-enabled parent EC2 host (AL2023 kernel 6.18) that runs
@@ -40,7 +44,6 @@ Chicken-and-egg: the bucket is created by this stack. Suggested order: `tofu app
 | `ami_ssm_parameter_x86_64` | `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-6.18-x86_64` | from Firecracker/EC2 docs |
 | `vpc_cidr` | `10.20.0.0/16` | /24 subnets via `cidrsubnet` |
 | `root_volume_size_gb` | 30 | |
-| `bundle_key` | `sandbox-demo.tgz` | |
 | `enable_logs_endpoint` | false | extra hourly cost |
 | `enable_phase2_kms` | false | adds KMS key, role policy, KMS interface endpoint |
 | `kms_allowed_image_pcr0` | `""` | 96 hex chars, non-zero; required when phase 2 on (precondition) |
@@ -74,7 +77,8 @@ checkov -d . --framework terraform                                        # 0 fa
 - Minimal inline SSM policy is sufficient for registration (fallback: `AmazonSSMManagedInstanceCore`).
 - Both `aws_launch_template` and `aws_instance` carry `enclave_options`/metadata/EBS settings; how the provider reconciles an instance that sets overrides alongside a launch template was not exercised.
 - Phase 2: building a sandbox EIF and reading its PCR0 (no documented recipe found); KMS condition behaviour is documented, but the sandbox attestation flow end to end was not exercised. The root-account statement is deliberately limited (no `kms:*`); verify no lock-out.
-- Memory/CPU pool setup (`nitro_enclaves` allocator) is the host bootstrap's job and is not in user-data.
+- Bootstrap verifies a nonzero boot-time memory reservation (`nitro_enclaves.mempool` and sysfs counters).
+  If absent it fails preflight with configuration, reboot, and retry steps; `allocator.yaml` alone is insufficient.
 - No AWS call or `plan`/`apply` was run, so IAM, endpoint, SG and AMI-resolution behaviour is untested.
 
 ## Production checklist (infra-specific)
@@ -87,3 +91,6 @@ checkov -d . --framework terraform                                        # 0 fa
 - Prefer AWS-managed or least-privilege per-operator IAM for `ssm:StartSession`.
 - Phase 2: pin PCR0 (and optionally PCR1/2/8) per release; rotate; alarm on KMS `Decrypt` denials; never use debug-mode sandboxes.
 - Run tflint, checkov/trivy and a real `plan` review in CI before any apply.
+
+
+<!-- /coderabbit-ai-generated:v1 -->

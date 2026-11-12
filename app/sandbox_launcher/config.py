@@ -3,7 +3,8 @@
 Limits come from the Nitro Sandboxes / Firecracker docs (see docs/unverified.md):
   * memory >= 64 MiB and a multiple of 2 MiB
   * vcpu_count even unless cpu_overcommit
-  * total sandbox vCPUs <= 5x parent vCPUs
+  * each sandbox vCPUs <= parent vCPUs
+  * combined overcommitted sandbox vCPUs <= 5x parent vCPUs (not enforced here)
   * <= 1024 vCPUs
 """
 
@@ -16,7 +17,6 @@ from typing import Any, Dict, Optional
 MODES = ("confidential", "direct")
 MIN_MEM_MIB = 64
 MAX_VCPUS = 1024
-VCPU_PARENT_FACTOR = 5
 MAX_TIMEOUT_S = 3600
 VSOCK_GUEST_CID = 3
 VSOCK_PORT = 5005  # guest agent listens here
@@ -53,11 +53,9 @@ def validate_spec(spec: SandboxSpec, parent_vcpus: Optional[int] = None) -> None
         raise ConfigError("vcpus must be between 1 and %d" % MAX_VCPUS)
     if spec.vcpus % 2 and not spec.cpu_overcommit:
         raise ConfigError("vcpus must be even unless --cpu-overcommit is set")
-    cap = VCPU_PARENT_FACTOR * parent_vcpus
-    if spec.vcpus > cap:
+    if spec.vcpus > parent_vcpus:
         raise ConfigError(
-            "vcpus=%d exceeds %dx parent vCPUs (%d x %d = %d)"
-            % (spec.vcpus, VCPU_PARENT_FACTOR, VCPU_PARENT_FACTOR, parent_vcpus, cap)
+            "vcpus=%d exceeds parent vCPUs (%d)" % (spec.vcpus, parent_vcpus)
         )
     if spec.mem_mib < MIN_MEM_MIB:
         raise ConfigError("mem_mib must be >= %d" % MIN_MEM_MIB)
