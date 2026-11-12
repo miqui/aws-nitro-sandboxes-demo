@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars and adjust. No secrets are needed here.
+project_name  = "nitro-sbx"
+region        = "us-east-1"
+instance_type = "m6i.2xlarge" # UNVERIFIED Enclaves support: check before apply
+vpc_cidr      = "10.20.0.0/16"
+
+root_volume_size_gb  = 30
+enable_logs_endpoint = false
+
+# Phase 2 (attestation-gated KMS) - off by default
+enable_phase2_kms      = false
+kms_allowed_image_pcr0 = ""
