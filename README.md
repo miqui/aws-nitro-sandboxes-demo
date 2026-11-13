@@ -96,7 +96,7 @@ costs more than the idle host. The S3 gateway endpoint is free. No NAT gateway. 
 - Deliberate demo shortcuts (see inline `checkov:skip` comments): SSE-S3 rather than CMK, no bucket access logging or
   replication, no VPC flow logs, `force_destroy = true`.
 
-## Deploy guide (for Miguel; this spends money, so read it first)
+## Deploy guide (this spends money, so read it first)
 
 Prerequisites: AWS credentials for a sandbox account, `tofu` >= 1.8, AWS CLI + Session Manager plugin.
 
